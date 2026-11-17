@@ -215,6 +215,79 @@ The frontend is automatically served from the backend, so no separate frontend s
 
 - `GET /api/health` - Health check endpoint
 
+- `GET /api/library/file?path=<ruta relativa>` - Descarga un archivo de audio de la biblioteca de Navidrome
+  (solo rutas dentro de `NAVIDROME_MUSIC_PATH`; es el link que devuelve el MCP)
+
+- `/mcp` - Servidor MCP para agentes de IA (ver abajo)
+
+## MCP para agentes de IA
+
+La app incluye un servidor [MCP](https://modelcontextprotocol.io) (Model Context Protocol) para que
+agentes de IA como Claude Code o Claude Desktop puedan buscar, descargar y entregarte canciones.
+Está en la misma app, en `http://<host>:8000/mcp`, con transporte **streamable HTTP**. No hay que
+levantar nada aparte.
+
+### Conectarlo
+
+**Claude Code**
+
+```bash
+claude mcp add --transport http music-downloader http://<host>:8000/mcp
+# con MCP_TOKEN definido:
+claude mcp add --transport http music-downloader http://<host>:8000/mcp \
+  --header "Authorization: Bearer <tu token>"
+```
+
+**Claude Desktop**
+
+- *Conector remoto* (Configuración → Conectores → Agregar conector personalizado): pega la URL
+  `https://<tu dominio>/mcp`. Los conectores remotos se conectan desde la nube de Anthropic, así que
+  la app tiene que ser accesible desde internet (con HTTPS). Si la expones, define `MCP_TOKEN`.
+- *Red local* (la app solo es accesible en tu casa): usa el puente `mcp-remote` (requiere Node.js)
+  en `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "music-downloader": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://192.168.1.50:8000/mcp", "--allow-http"]
+    }
+  }
+}
+```
+
+  Con `MCP_TOKEN`, agrega `"--header", "Authorization:${MD_AUTH}"` a `args` y
+  `"env": {"MD_AUTH": "Bearer <tu token>"}`.
+
+Cualquier otro cliente MCP que soporte streamable HTTP sirve igual con la misma URL.
+
+### Herramientas
+
+| Herramienta | Qué hace |
+|---|---|
+| `buscar_canciones(consulta, limite=5, fuente=None)` | Busca en el catálogo (Spotify/Deezer; `fuente` = `spotify`, `deezer` o `auto`). Devuelve id, nombre, artista, álbum, duración y fuente. |
+| `buscar_en_biblioteca(consulta)` | Qué archivos ya existen en la carpeta de música (sin acentos ni mayúsculas), con su ruta y link de descarga. |
+| `descargar_cancion(track_id=None, consulta=None, esperar=True, timeout_s=240)` | Descarga una canción a la biblioteca de Navidrome (igual que el botón de la web). Si solo hay `consulta`, toma el mejor resultado del catálogo. Devuelve estado, ruta relativa y link de descarga. |
+| `estado_descarga(track_id)` | Estado de una descarga (queued, processing, completed, error). |
+| `obtener_cancion(track_id o ruta, incluir_audio=False)` | Link de descarga de una canción de la biblioteca; con `incluir_audio=True` y si pesa ≤ 15 MB, también el audio embebido (base64). |
+| `revisar_playlist(url)` | Importa/actualiza una playlist de Spotify o Deezer y la compara con la biblioteca: total, ya están, faltan (lista corta) y por revisar. |
+| `descargar_faltantes(playlist_id)` | Descarga masiva de las canciones que faltan de una playlist (una por una, con pausas). |
+| `estado_playlist(playlist_id)` | Avance de la playlist y de la descarga masiva. |
+
+La revisión fina de playlists (aprobar, rechazar, elegir otro video) sigue haciéndose en la página `/playlist`.
+
+### Configuración
+
+| Variable | Por defecto | Para qué |
+|---|---|---|
+| `MCP_TOKEN` | vacío | Vacío = el MCP no pide autenticación (pensado para instalación local). Con valor, se exige `Authorization: Bearer <MCP_TOKEN>`. |
+| `PUBLIC_BASE_URL` | vacío | URL base de los links de descarga (p. ej. `https://musica.midominio.com`). Si está vacía se usa la URL con la que llegó la petición, respetando `X-Forwarded-Proto`, `X-Forwarded-Host` y `X-Forwarded-Prefix`. |
+
+> El token protege `/mcp`. El link de descarga (`/api/library/file`) no lo pide, igual que el resto
+> de la API de la app, para que se pueda abrir directo en el navegador; no expongas la app a internet
+> sin un proxy con autenticación.
+
 ## Project Structure
 
 ```
@@ -222,6 +295,7 @@ music-downloader/
 ├── backend/
 │   ├── app.py                 # FastAPI main application
 │   ├── config.py              # Configuration management
+│   ├── mcp_server.py          # Servidor MCP para agentes de IA (/mcp)
 │   ├── requirements.txt       # Python dependencies
 │   ├── env.example            # Environment variables template
 │   ├── static                 # Static files
@@ -235,7 +309,8 @@ music-downloader/
 │   │   ├── metadata.py        # ID3 tagging
 │   │   └── navidrome.py       # Navidrome integration
 │   └── utils/
-│       └── file_handler.py    # File operations
+│       ├── file_handler.py    # File operations
+│       └── library_files.py   # Rutas seguras y links de la biblioteca
 ├── images/                    # Screenshots and images for README
 ├── Dockerfile                 # Docker image definition
 ├── docker-compose.yml         # Docker Compose configuration

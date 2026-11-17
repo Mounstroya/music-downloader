@@ -29,6 +29,10 @@ API_HOST = os.getenv("API_HOST", "0.0.0.0")
 API_PORT = int(os.getenv("API_PORT", "8000"))
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
 
+# MCP (agentes de IA en /mcp)
+MCP_TOKEN = os.getenv("MCP_TOKEN", "").strip()  # vacío = sin autenticación; con valor exige "Authorization: Bearer <token>"
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")  # URL base para los links de descarga (opcional)
+
 # Create directories if they don't exist
 Path(DOWNLOAD_DIR).mkdir(parents=True, exist_ok=True)
 Path(NAVIDROME_MUSIC_PATH).mkdir(parents=True, exist_ok=True)

@@ -42,6 +42,7 @@ from services.metadata import MetadataService
 from services.navidrome import NavidromeService
 from services.lyrics import LyricsService
 from utils.file_handler import get_download_path
+from utils.library_files import mime_for, resolve_library_file
 
 app = FastAPI(title="Music Downloader API", version="1.0.0")
 
@@ -841,6 +842,15 @@ def cleanup_temp_file(file_path: str):
         print(f"Error cleaning up temp file {file_path}: {e}")
 
 
+@app.get("/api/library/file")
+async def library_file(path: str = Query(..., description="Ruta relativa dentro de la biblioteca de música")):
+    """Descarga un archivo de audio de la biblioteca (NAVIDROME_MUSIC_PATH). Lo usan los links del MCP."""
+    full = resolve_library_file(path)
+    if not full:
+        raise HTTPException(status_code=404, detail="Archivo no encontrado en la biblioteca")
+    return FileResponse(full, media_type=mime_for(full), filename=os.path.basename(full))
+
+
 @app.get("/api/track/{track_id}/exists")
 async def check_track_exists(track_id: str):
     """Check if a track file already exists in downloads"""
@@ -906,6 +916,11 @@ app.include_router(build_playlist_router(catalog, youtube_service, download_and_
 from youtube_cookies import build_router as build_cookies_router
 
 app.include_router(build_cookies_router())
+
+# MCP para agentes de IA (Claude Code, Claude Desktop, etc.) en /mcp
+from mcp_server import mount_mcp
+
+mount_mcp(app, catalog, download_and_process)
 
 
 @app.get("/cookies", response_class=HTMLResponse)

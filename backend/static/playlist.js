@@ -13,8 +13,13 @@ const FILTERS = [
     { key: 'active', label: 'Descargando', st: ['queued', 'downloading'] },
     { key: 'done', label: 'Ya están', st: ['auto', 'have', 'approved'] },
     { key: 'skip', label: 'Omitidas', st: ['skip'] },
+    { key: 'new', label: '✦ Nuevas', fn: (t) => !!t.is_new },
+    { key: 'upgrade', label: '⬆ Mejorables', fn: (t) => isUpgradable(t) },
 ];
 const DONE = ['auto', 'have', 'approved', 'skip'];
+const FOUND = ['auto', 'have', 'approved', 'maybe'];
+const isUpgradable = (t) => FOUND.includes(t.status) && !!t.upgrade_reason && !t.upgrade_ignored;
+const fmatch = (f, t) => (f.fn ? f.fn(t) : (!f.st || f.st.includes(t.status)));
 
 let state = { pid: null, data: null, filter: 'missing', text: '' };
 let rowEls = new Map();   // track_id -> {el, sig}
@@ -126,7 +131,101 @@ async function openPlaylist(pid) {
     try { localStorage.setItem('pl_last', pid); } catch (_) { /* sin storage */ }
     await refresh();
     $('#plView').classList.remove('hidden');
+    $('#syncCfg').classList.add('hidden');
     showConnect();
+    loadSync();
+}
+
+// ------------------------------------------------------------------ sincronización
+const ago = (ts) => {
+    if (!ts) return '';
+    const s = Math.round(Date.now() / 1000 - ts);
+    if (s < 0) { const m = Math.round(-s / 60); return m < 90 ? `en ${m} min` : `en ${Math.round(m / 60)} h`; }
+    if (s < 90) return 'hace un momento';
+    if (s < 5400) return `hace ${Math.round(s / 60)} min`;
+    if (s < 172800) return `hace ${Math.round(s / 3600)} h`;
+    return `hace ${Math.round(s / 86400)} días`;
+};
+const fmtDate = (ts) => ts ? new Date(ts * 1000).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : '';
+
+async function loadSync() {
+    if (!state.pid) return;
+    try { state.sync = await api(`api/playlists/${state.pid}/sync`); } catch (_) { state.sync = null; }
+    renderSyncBar();
+}
+
+function syncResultText(r) {
+    if (!r) return '';
+    const parts = [`${r.added} nueva${r.added === 1 ? '' : 's'}`];
+    if (r.removed) parts.push(`${r.removed} quitada${r.removed === 1 ? '' : 's'}`);
+    if (r.downloads) parts.push(`${r.downloads} descargada${r.downloads === 1 ? '' : 's'} automáticamente`);
+    if (r.downloads_note) parts.push(r.downloads_note);
+    return parts.join(', ');
+}
+
+function renderSyncBar() {
+    const s = state.sync;
+    const bar = $('#syncBar');
+    if (!s) { bar.innerHTML = ''; return; }
+    const res = s.last_sync_result;
+    let html = '';
+    if (s.last_sync_at) {
+        html += `<span>Última sincronización: <b title="${esc(fmtDate(s.last_sync_at))}">${esc(ago(s.last_sync_at))}</b>` +
+            (res && res.trigger === 'auto' ? ' (automática)' : '') + '</span>';
+        if (s.last_sync_ok === 0) html += `<span class="serr">✖ ${esc(s.last_sync_error || 'Falló')}</span>`;
+        else if (res) html += `<span>${esc(syncResultText(res))}</span>`;
+    } else html += '<span>Todavía no se ha sincronizado.</span>';
+    if (s.auto_sync) {
+        html += `<span class="stag ${s.global.enabled ? 'on' : 'off'}">Automática cada ${s.global.test_minutes ? s.global.test_minutes + ' min (prueba)' : s.interval_hours + ' h'}` +
+            (s.global.enabled ? (s.next_sync_at ? ` · próxima ${esc(ago(s.next_sync_at))}` : '') : ' · apagada en el servidor') + '</span>';
+        if (s.fail_count) html += `<span class="serr">${s.fail_count} fallo${s.fail_count === 1 ? '' : 's'} seguido${s.fail_count === 1 ? '' : 's'}: se espera más entre intentos</span>`;
+    }
+    if (s.partial) {
+        const pl = state.data && state.data.playlist;
+        html += `<div class="swarn">⚠ Sin iniciar sesión en Spotify solo se leen las primeras 100${pl ? ` de ${pl.total}` : ''} canciones. ` +
+            'Al sincronizar no se borra ninguna canción que ya no aparezca, y las nuevas que estén después de la 100 no se detectan.</div>';
+    }
+    bar.innerHTML = html;
+}
+
+function renderSyncCfg() {
+    const s = state.sync;
+    const box = $('#syncCfg');
+    if (!s) { box.innerHTML = '<div class="muted">No se pudo leer la configuración.</div>'; return; }
+    const g = s.global;
+    box.innerHTML = `
+        <div class="cfg-title">Sincronización automática</div>
+        ${!g.enabled ? '<div class="swarn">La sincronización automática está apagada en el servidor (<code>AUTO_SYNC_ENABLED=false</code>). Puedes dejarla configurada, pero no se ejecutará hasta que se active.</div>' : ''}
+        ${!s.syncable ? '<div class="swarn">Esta playlist no se puede volver a leer automáticamente.</div>' : ''}
+        <label class="chk"><input type="checkbox" id="cfgAuto" ${s.auto_sync ? 'checked' : ''} ${s.syncable ? '' : 'disabled'}> Sincronizar esta playlist automáticamente</label>
+        <label class="chk">Cada <input type="number" id="cfgHours" min="${g.min_hours}" max="720" step="1" value="${s.interval_hours || g.default_hours}"> horas <span class="muted">(mínimo ${g.min_hours})</span></label>
+        <label class="chk"><input type="checkbox" id="cfgDl" ${s.auto_download ? 'checked' : ''}> Descargar automáticamente las nuevas <span class="muted">(máximo ${g.max_downloads} por sincronización; si está apagado, solo quedan marcadas como faltantes)</span></label>
+        <div class="muted">Para cuidar tu cuenta se sincroniza una playlist a la vez, con pausas, y nunca al arrancar el servidor. Si falla, espera cada vez más antes de reintentar.</div>
+        <div class="acts" style="justify-content:flex-start"><button class="btn primary" id="cfgSave">Guardar</button><button class="btn" id="cfgClose">Cerrar</button></div>`;
+    $('#cfgClose').onclick = () => box.classList.add('hidden');
+    $('#cfgSave').onclick = async () => {
+        let h = parseInt($('#cfgHours').value, 10) || g.default_hours;
+        if (h < g.min_hours) { h = g.min_hours; toast(`El mínimo es cada ${g.min_hours} horas`); }
+        try {
+            state.sync = await api(`api/playlists/${state.pid}/sync`, { method: 'PUT', body: { auto_sync: $('#cfgAuto').checked, interval_hours: h, auto_download: $('#cfgDl').checked } });
+            toast(state.sync.auto_sync ? `Sincronización automática activada (cada ${state.sync.interval_hours} h)` : 'Sincronización automática desactivada');
+            renderSyncBar(); renderSyncCfg();
+        } catch (e) { toast(e.message, true); }
+    };
+}
+
+async function syncNow() {
+    const btn = $('#reloadBtn');
+    btn.disabled = true; btn.textContent = 'Sincronizando…';
+    try {
+        const r = await api(`api/playlists/${state.pid}/sync`, { method: 'POST' });
+        toast(`Sincronizada: ${syncResultText(r)}${r.partial ? ` (solo se leyeron ${r.loaded} de ${r.total})` : ''}`);
+        if (r.user_error) toast('No se pudo leer con tu cuenta: ' + r.user_error, true);
+        if (r.added) state.filter = 'new';
+        await loadSaved();
+        await refresh();
+    } catch (e) { toast(e.message, true); }
+    finally { btn.disabled = false; btn.textContent = '↻ Sincronizar ahora'; await loadSync(); }
 }
 
 // ------------------------------------------------------------------ render
@@ -148,6 +247,7 @@ function schedulePoll() {
 function renderSummary() {
     const { playlist: pl, tracks, bulk } = state.data;
     const n = (sts) => tracks.filter((t) => !sts || sts.includes(t.status)).length;
+    const nf = (f) => tracks.filter((t) => fmatch(f, t)).length;
     const done = n(DONE);
     $('#plName').textContent = pl.name;
     $('#plMeta').innerHTML = `${esc(pl.owner || '')} · ${pl.loaded}${pl.loaded < pl.total ? ` de ${pl.total}` : ''} canciones · ` +
@@ -157,7 +257,10 @@ function renderSummary() {
     $('#progFill').style.width = tracks.length ? `${(done / tracks.length) * 100}%` : '0';
 
     $('#filters').innerHTML = FILTERS.map((f) =>
-        `<button class="chip ${state.filter === f.key ? 'active' : ''}" data-f="${f.key}">${f.label}<b>${n(f.st)}</b></button>`).join('');
+        `<button class="chip ${state.filter === f.key ? 'active' : ''} ${f.fn && nf(f) ? 'hl' : ''}" data-f="${f.key}">${f.label}<b>${nf(f)}</b></button>`).join('') +
+        (state.filter === 'new' && nf(FILTERS.find((f) => f.key === 'new')) ? '<button class="btn sm" id="newSeen">Marcar como vistas</button>' : '');
+    const ns = $('#newSeen');
+    if (ns) ns.onclick = async () => { await api(`api/playlists/${state.pid}/new/seen`, { method: 'POST' }); state.filter = 'all'; await refresh(); };
     $('#filters').querySelectorAll('.chip').forEach((c) => c.onclick = () => { state.filter = c.dataset.f; renderSummary(); applyFilter(); });
 
     const bar = $('#bulkBar');
@@ -173,7 +276,10 @@ function renderSummary() {
     }
 }
 
-function sig(t) { return [t.status, t.progress, t.file_rel, t.match_rel, t.note, t.album_art].join('|'); }
+function sig(t) {
+    return [t.status, t.progress, t.file_rel, t.match_rel, t.note, t.album_art, t.is_new, t.upgrade_reason,
+        t.upgrade_ignored, t.old_rel, t.old_exists, t.lib_bitrate, t.lib_length].join('|');
+}
 
 function renderList() {
     const list = $('#list');
@@ -207,7 +313,7 @@ function applyFilter() {
     const q = state.text.toLowerCase();
     state.data.tracks.forEach((t) => {
         const r = rowEls.get(t.track_id);
-        const okSt = !f.st || f.st.includes(t.status) || r.el._panel; // no esconder la que estás revisando
+        const okSt = fmatch(f, t) || r.el._panel; // no esconder la que estás revisando
         const okTx = !q || `${t.name} ${t.artist} ${t.album}`.toLowerCase().includes(q);
         r.el.classList.toggle('hidden', !(okSt && okTx));
     });
@@ -216,10 +322,15 @@ function applyFilter() {
 function rowHtml(t) {
     const art = t.album_art ? `<img class="art" src="${esc(t.album_art)}" loading="lazy" alt="">` : '<div class="art"></div>';
     let extra = '';
-    if (['auto', 'maybe', 'have'].includes(t.status) && t.match_rel) extra = `<div class="path">En tu biblioteca: <b>${esc(t.match_rel)}</b></div>`;
+    const finfo = [t.lib_bitrate ? `${t.lib_bitrate} kbps` : '', t.lib_length ? fmtDur(t.lib_length * 1000) : ''].filter(Boolean).join(' · ');
+    if (['auto', 'maybe', 'have'].includes(t.status) && t.match_rel) extra = `<div class="path">En tu biblioteca: <b>${esc(t.match_rel)}</b>${finfo ? ` <span class="finfo">${finfo}</span>` : ''}</div>`;
     if (['downloaded', 'approved'].includes(t.status) && t.file_rel) extra = `<div class="path">Descargada en: <b>${esc(t.file_rel)}</b></div>`;
     if (['queued', 'downloading'].includes(t.status)) extra = `<div class="path">${esc(t.job_message || '')} ${t.progress ? `(${t.progress}%)` : ''}</div>`;
     if (t.note && ['missing', 'error'].includes(t.status)) extra += `<div class="note">${esc(t.note)}</div>`;
+    if (t.note && t.status === 'have') extra += `<div class="muted">${esc(t.note)}</div>`;
+    if (isUpgradable(t)) extra += `<div class="upg">⬆ Mejorable: ${esc(t.upgrade_reason)}</div>`;
+    if (t.status === 'approved' && t.old_rel && t.old_exists) extra += `<div class="upg old">Versión anterior (se conserva): <b>${esc(t.old_rel)}</b></div>`;
+    if (['queued', 'downloading', 'downloaded'].includes(t.status) && t.old_rel) extra += `<div class="muted">Buscando mejor versión; la anterior se conserva: ${esc(t.old_rel)}</div>`;
 
     const B = (act, label, cls = '') => `<button class="btn sm ${cls}" data-a="${act}">${label}</button>`;
     let acts = '';
@@ -238,11 +349,14 @@ function rowHtml(t) {
             acts = B('missing', 'Deshacer'); break;
         default: acts = '';
     }
+    if (isUpgradable(t)) acts += B('upgrade', '⬆ Buscar mejor versión', 'primary') + B('ignore', 'Ignorar');
+    else if (FOUND.includes(t.status) && t.upgrade_reason && t.upgrade_ignored) acts += B('unignore', 'Volver a sugerir mejora');
+    if (t.status === 'approved' && t.old_rel && t.old_exists) acts += B('delete-old', 'Borrar la versión vieja', 'bad') + B('keep-both', 'Conservar ambas');
     return `
         <div class="pos">${t.position + 1}</div>
         ${art}
         <div class="info">
-            <div class="title"><a href="${esc(trackUrl(t.track_id))}" target="_blank" rel="noopener">${esc(t.name)}</a></div>
+            <div class="title">${t.is_new ? '<span class="newtag">Nueva</span>' : ''}<a href="${esc(trackUrl(t.track_id))}" target="_blank" rel="noopener">${esc(t.name)}</a></div>
             <div class="sub">${esc(t.artist)}${t.album ? ' · ' + esc(t.album) : ''} · ${fmtDur(t.duration_ms)}</div>
             ${extra}
         </div>
@@ -273,17 +387,30 @@ async function act(el, t, a, btn) {
             return el._panel === 'play' ? closePanel(el) : openPlayer(el, t, 'match');
         } else if (a === 'reject') {
             btn.disabled = true;
-            await api(`${base}/reject`, { method: 'POST' });
+            const rr = await api(`${base}/reject`, { method: 'POST' });
+            if (rr && rr.restored) { toast('Descarga borrada. Se conserva la versión anterior.'); closePanel(el); await refresh(); return; }
             toast('Descarga borrada. Elige otra opción.');
             await refresh();
             return openSearch(el, state.data.tracks.find((x) => x.track_id === t.track_id) || t);
+        } else if (a === 'upgrade') {
+            return el._panel === 'search' ? closePanel(el) : openSearch(el, t, '', true);
+        } else if (a === 'ignore' || a === 'unignore') {
+            await api(`${base}/upgrade-ignore`, { method: 'POST', body: { ignore: a === 'ignore' } });
+        } else if (a === 'keep-both') {
+            await api(`${base}/keep-both`, { method: 'POST' });
+            toast('Se conservan las dos versiones');
+        } else if (a === 'delete-old') {
+            if (!confirm(`¿Borrar definitivamente la versión vieja?\n\n${t.old_rel}\n\nSe conserva la nueva:\n${t.file_rel || ''}\n\nEsta acción no se puede deshacer.`)) return;
+            btn.disabled = true;
+            await api(`${base}/delete-old`, { method: 'POST' });
+            toast('Versión vieja borrada');
         }
         await refresh();
     } catch (e) { toast(e.message, true); }
 }
 
 // ------------------------------------------------------------------ paneles
-function closePanel(el) { el.querySelector('.panel').innerHTML = ''; el._panel = null; }
+function closePanel(el) { el.querySelector('.panel').innerHTML = ''; el._panel = null; el._upgrade = false; }
 
 function openPlayer(el, t, which) {
     const p = el.querySelector('.panel');
@@ -305,16 +432,20 @@ function openReview(el, t) {
     applyFilter();
 }
 
-async function openSearch(el, t, q = '') {
+async function openSearch(el, t, q = '', upgrade = false) {
     const p = el.querySelector('.panel');
     el._panel = 'search';
+    if (upgrade || el._upgrade) el._upgrade = true;
     p.innerHTML = `
+        ${el._upgrade && FOUND.includes(t.status) ? `<div class="muted">Buscando una mejor versión (${esc(t.upgrade_reason || '')}). La que tienes se conserva; después de escuchar la nueva decides si borrar la vieja.</div>` : ''}
         <form class="row sform">
             <input type="text" name="q" value="${esc(q)}" placeholder="Búsqueda personalizada (opcional): ${esc(t.artist)} ${esc(t.name)}">
             <button class="btn" type="submit">Buscar</button>
         </form>
         <div class="cands"><div class="muted">Buscando en YouTube Music…</div></div>`;
     p.querySelector('.sform').onsubmit = (e) => { e.preventDefault(); openSearch(el, t, e.target.q.value); };
+    p.querySelector('.sform').insertAdjacentHTML('beforeend', '<button class="btn" type="button" data-close>Cerrar</button>');
+    p.querySelector('[data-close]').onclick = () => closePanel(el);
     applyFilter();
     try {
         const r = await api(`api/playlists/${state.pid}/tracks/${t.track_id}/candidates${q ? '?q=' + encodeURIComponent(q) : ''}`);
@@ -352,7 +483,8 @@ async function openSearch(el, t, q = '') {
 
 // ------------------------------------------------------------------ init
 $('#importForm').onsubmit = (e) => { e.preventDefault(); const v = $('#plUrl').value.trim(); if (v) importPlaylist(v); };
-$('#reloadBtn').onclick = () => importPlaylist(state.pid);
+$('#reloadBtn').onclick = () => syncNow();
+$('#syncCfgBtn').onclick = () => { const b = $('#syncCfg'); b.classList.toggle('hidden'); if (!b.classList.contains('hidden')) renderSyncCfg(); };
 $('#rescanBtn').onclick = async () => {
     try { const r = await api(`api/playlists/${state.pid}/rescan`, { method: 'POST' }); toast(`Biblioteca revisada: ${r.files} archivos`); await refresh(); }
     catch (e) { toast(e.message, true); }

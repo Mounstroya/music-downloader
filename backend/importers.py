@@ -16,6 +16,7 @@ un ID sintético ``q:<hash>`` y se descargan con metadatos básicos (``reverse_d
 import csv
 import difflib
 import hashlib
+import math
 import io
 import json
 import re
@@ -114,6 +115,8 @@ def base_title(t: str) -> str:
     t = re.sub(r"\s*[\(\[][^\)\]]*[\)\]]", "", t)
     t = re.sub(r"\s+(feat\.?|ft\.?|featuring)\s+.*$", "", t, flags=re.I)
     t = re.sub(r"\s+[-–—]\s+.*(remaster|version|versión|mix|edit|mono|stereo|from|deluxe|bonus).*$", "", t, flags=re.I)
+    # Deezer a veces pega la versión sin separador: "De Música Ligera Remasterizado 2007"
+    t = re.sub(r"\s+(remaster\w*|remasterizad[oa])(\s+(version|versión|\d{4}))*\s*$", "", t, flags=re.I)
     return norm(t) or norm(orig)
 
 
@@ -208,8 +211,13 @@ class Resolver:
             return None   # sin artista (JSON-LD de Apple): solo título exacto y duración casi idéntica
         # preferir el título "limpio" (sin "Radio Edit", "Remastered"… que no se pidieron)
         nofeat = re.compile(r"\b(feat|ft|featuring|with|con)\b\.?[^\)\]]*", re.I)
-        extra = len(set(norm(nofeat.sub("", cand.get("name", ""))).split()) - set(norm(nofeat.sub("", name)).split()))
-        return ts * 2 + ds + aq * 0.4 - min(extra, 5) * 0.08
+        # "Remasterizado 2007" es la grabación original: no cuenta como añadido
+        remaster = re.compile(r"\b(remaster\w*|remasterizad[oa]|\d{4})\b", re.I)
+        extra = len(set(norm(remaster.sub("", nofeat.sub("", cand.get("name", "")))).split())
+                    - set(norm(nofeat.sub("", name)).split()))
+        # desempate por popularidad (Deezer): la versión conocida suele ser la más escuchada
+        pop = min(1.0, math.log10((cand.get("rank") or 0) + 1) / 6) * 0.25
+        return ts * 2 + ds + aq * 0.4 - min(extra, 5) * 0.08 + pop
 
     @staticmethod
     def artist_ok(cand_artists: List[str], artists: List[str]) -> float:

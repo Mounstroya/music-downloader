@@ -80,6 +80,7 @@ class DeezerService:
             "album_art": self._cover(album),
             "release_date": album.get("release_date") or t.get("release_date") or "",
             "isrc": t.get("isrc"),
+            "rank": t.get("rank") or 0,  # popularidad en Deezer (sirve para desempatar versiones)
             "source": "deezer",
         }
 

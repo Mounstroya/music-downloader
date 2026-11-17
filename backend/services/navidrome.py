@@ -91,25 +91,29 @@ class NavidromeService:
             return False
         
         try:
-            # Subsonic API endpoint for starting scan
-            # Note: This requires admin credentials
-            import requests.auth
-            
-            auth = requests.auth.HTTPBasicAuth(self.username, self.password)
+            # Subsonic API (requiere usuario admin). Se usa autenticación por token
+            # (t = md5(contraseña + salt)) para que la contraseña nunca viaje en la URL
+            # ni aparezca en los logs si la petición falla.
+            import hashlib
+            import secrets
+
+            salt = secrets.token_hex(8)
             url = f"{self.api_url}/rest/startScan.view"
             params = {
                 'u': self.username,
-                'p': self.password,
+                't': hashlib.md5((self.password + salt).encode('utf-8')).hexdigest(),
+                's': salt,
                 'v': '1.16.1',
                 'c': 'musicDownloader',
                 'f': 'json'
             }
-            
-            response = requests.get(url, params=params, auth=auth, timeout=10)
+
+            response = requests.get(url, params=params, timeout=10)
             return response.status_code == 200
-        
+
         except Exception as e:
-            print(f"Error triggering Navidrome scan: {e}")
+            # no imprimir `e` tal cual: la URL de la petición va dentro del mensaje
+            print(f"Error triggering Navidrome scan: {type(e).__name__} ({self.api_url})")
             return False
     
     def _sanitize_path(self, path: str) -> str:

@@ -29,7 +29,10 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 import config
-from playlist_feature import Library, base_title, norm
+from playlist_feature import LIVE_RE, Library, base_title, norm
+import re
+
+VERSION_RE = re.compile(r"\b(remix|karaoke|instrumental|cover|sped up|slowed|acapella|tribute|tributo)\b", re.I)
 from utils.job_store import get_job, upsert_job
 from utils.library_files import base_url_from_headers, file_url, mime_for, relative_path, resolve_library_file
 
@@ -54,6 +57,27 @@ descargar_faltantes(playlist_id) -> estado_playlist(playlist_id).
 YouTube bloquea por IP si se descarga demasiado: no descargues canciones que el usuario no pidió.
 """
 
+
+
+def pick_best(consulta: str, results: List[Dict]) -> Dict:
+    """Elige el resultado que mejor coincide con la consulta libre ("artista canción").
+
+    El primer resultado del catálogo no siempre es el correcto (p. ej. otra canción del mismo
+    artista), así que se puntúa: cuántas palabras de la consulta aparecen en título+artista,
+    penalizando versiones (en vivo, remix…) que no se pidieron y premiando el orden original.
+    """
+    q = set(norm(consulta).split())
+    want_version = bool(LIVE_RE.search(consulta) or VERSION_RE.search(consulta))
+
+    def score(i_t):
+        i, t = i_t
+        words = set(norm(f"{t.get('name', '')} {t.get('artist', '')}").split())
+        cover = len(q & words) / max(1, len(q))          # qué tanto de la consulta se cubre
+        extra = len(set(norm(t.get('name', '')).split()) - q) * 0.03   # palabras de más en el título
+        version = 0.0 if want_version or not (LIVE_RE.search(t.get('name', '')) or VERSION_RE.search(t.get('name', ''))) else 0.3
+        return cover - extra - version - i * 0.01
+
+    return max(enumerate(results), key=score)[1]
 
 def _fmt_duration(ms: Optional[int]) -> str:
     s = int((ms or 0) / 1000)
@@ -234,13 +258,14 @@ def build_mcp(app, catalog, download_and_process) -> FastMCP:
             if not (consulta or "").strip():
                 raise ToolError("Indica track_id o consulta")
             try:
-                res = await asyncio.to_thread(catalog.search_tracks, consulta.strip(), 1, 0, None)
+                res = await asyncio.to_thread(catalog.search_tracks, consulta.strip(), 10, 0, None)
             except Exception as e:
                 raise ToolError(f"La búsqueda falló: {e}")
             if not res:
                 raise ToolError(f"No encontré ninguna canción para «{consulta}»")
-            elegido = track_out(res[0])
-            track_id = res[0]["id"]
+            best = pick_best(consulta, res)
+            elegido = track_out(best)
+            track_id = best["id"]
 
         job = get_job(track_id)
         if job and job.get("status") == "completed" and job_file(job):

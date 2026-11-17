@@ -902,7 +902,11 @@ async def health_check():
 
 from playlist_feature import build_router as build_playlist_router
 
-app.include_router(build_playlist_router(catalog, youtube_service, download_and_process, templates))
+import importers
+
+app.include_router(build_playlist_router(
+    catalog, youtube_service, importers.wrap_download(download_and_process, reverse_download_and_process), templates))
+app.include_router(importers.router)
 from youtube_cookies import build_router as build_cookies_router
 
 app.include_router(build_cookies_router())

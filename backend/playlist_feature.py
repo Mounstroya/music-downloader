@@ -25,6 +25,7 @@ from spotipy.cache_handler import CacheFileHandler
 from spotipy.oauth2 import SpotifyOAuth
 
 import config
+import importers
 from utils.job_store import get_job, upsert_job
 
 DB_PATH = os.path.join(config.DOWNLOAD_DIR, "playlists.db")
@@ -60,6 +61,7 @@ def init_db():
             status TEXT DEFAULT 'missing', match_path TEXT, file_path TEXT, note TEXT,
             updated_at INTEGER, PRIMARY KEY(playlist_id, track_id));
         """)
+        importers.migrate(c)
 
 
 # ---------------------------------------------------------------- normalización
@@ -190,7 +192,8 @@ def parse_playlist_id(url: str) -> str:
         return m.group(1)
     if re.fullmatch(r"[A-Za-z0-9]{22}", url):
         return url
-    raise HTTPException(400, "No reconozco ese link. Pega el link de una playlist de Spotify o Deezer.")
+    raise HTTPException(400, "No reconozco ese link. Pega el link de una playlist de Spotify, Deezer, "
+                             "YouTube Music/YouTube o Apple Music, o usa «Pegar lista o subir CSV».")
 
 
 def _oauth() -> SpotifyOAuth:
@@ -275,7 +278,10 @@ def fetch_from_embed(pid: str) -> Dict:
 
 # ---------------------------------------------------------------- router
 class ImportReq(BaseModel):
-    url: str
+    url: str = ""
+    text: Optional[str] = None    # lista pegada o CSV subido
+    name: Optional[str] = None    # nombre para listas de texto
+    token: Optional[str] = None   # para consultar el progreso
 
 
 class AuthCodeReq(BaseModel):
@@ -404,9 +410,12 @@ def build_router(catalog, youtube_service, download_and_process: Callable, templ
 
     @r.post("/api/playlists/import")
     async def import_playlist(req: ImportReq):
-        pid = parse_playlist_id(req.url)
-        data, err = None, None
-        if pid.startswith("dz:"):
+        ext = await importers.fetch_external(catalog, youtube_service, req.url, req.text, req.name, req.token)
+        pid = ext[0] if ext else parse_playlist_id(req.url)
+        data, err = (ext[1] if ext else None), None
+        if data is not None:
+            pass  # YouTube, Apple Music o texto/CSV (importers.py)
+        elif pid.startswith("dz:"):
             try:
                 data = catalog.deezer.get_playlist(pid)
             except Exception as e:
@@ -442,13 +451,16 @@ def build_router(catalog, youtube_service, download_and_process: Callable, templ
                                  duration_ms,album_art,status,updated_at) VALUES (?,?,?,?,?,?,?,?,?,'missing',?)""",
                               (pid, t["id"], pos, t["name"], ", ".join(t["artists"]), json.dumps(t["artists"]),
                                t["album"], t["duration_ms"], t["album_art"], now))
+            importers.save_extra(c, pid, data["tracks"])
             # solo borra las que ya no están si se cargó la playlist completa
-            if data["source"] in ("cuenta", "deezer"):
+            if data["source"] in ("cuenta", "deezer") or data.get("complete"):
                 for tid in set(old) - keep:
                     c.execute("DELETE FROM ptracks WHERE playlist_id=? AND track_id=?", (pid, tid))
         rematch(pid)
         return {"id": pid, "name": data["name"], "total": data["total"], "loaded": len(data["tracks"]),
-                "source": data["source"], "skipped": data["skipped"], "user_error": err}
+                "source": data["source"], "skipped": data["skipped"], "user_error": err,
+                "unresolved": sum(1 for t in data["tracks"] if t.get("unresolved")),
+                "ignored": data.get("ignored") or []}
 
     @r.get("/api/playlists/{pid}")
     async def get_playlist(pid: str):
@@ -583,7 +595,8 @@ def build_router(catalog, youtube_service, download_and_process: Callable, templ
             raise HTTPException(409, "Ya hay una descarga masiva corriendo")
         with _db() as c:
             tids = [x["track_id"] for x in c.execute(
-                "SELECT track_id FROM ptracks WHERE playlist_id=? AND status IN ('missing','error') ORDER BY position",
+                "SELECT track_id FROM ptracks WHERE playlist_id=? AND status IN ('missing','error') "
+                "AND NOT (track_id LIKE 'q:%' AND video_id IS NULL) ORDER BY position",
                 (pid,))]
         for tid in tids:
             queue_download(pid, tid)

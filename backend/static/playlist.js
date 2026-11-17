@@ -20,12 +20,12 @@ let state = { pid: null, data: null, filter: 'missing', text: '' };
 let rowEls = new Map();   // track_id -> {el, sig}
 let pollTimer = null;
 
-function toast(msg, err = false) {
+function toast(msg, err = false, ms = null) {
     const t = $('#toast');
     t.textContent = msg;
     t.className = 'toast' + (err ? ' err' : '');
     clearTimeout(t._h);
-    t._h = setTimeout(() => t.classList.add('hidden'), err ? 6000 : 3000);
+    t._h = setTimeout(() => t.classList.add('hidden'), ms || (err ? 6000 : 3000));
 }
 
 async function api(path, opts = {}) {
@@ -41,7 +41,15 @@ async function api(path, opts = {}) {
     return data;
 }
 
-const trackUrl = (id) => id.startsWith('dz:') ? `https://www.deezer.com/track/${id.slice(3)}` : `https://open.spotify.com/track/${id}`;
+const isSpotifyPl = (pid) => !!pid && !pid.includes(':');
+const isUnresolved = (t) => t.track_id.startsWith('q:');
+const trackUrl = (t) => {
+    const id = t.track_id;
+    if (id.startsWith('dz:')) return `https://www.deezer.com/track/${id.slice(3)}`;
+    if (id.startsWith('q:')) return t.video_id ? `https://www.youtube.com/watch?v=${t.video_id}`
+        : `https://music.youtube.com/search?q=${encodeURIComponent(`${t.artist} ${t.name}`)}`;
+    return `https://open.spotify.com/track/${id}`;
+};
 const fmtDur = (ms) => { const s = Math.round((ms || 0) / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 
 // ------------------------------------------------------------------ cuenta Spotify
@@ -63,7 +71,7 @@ async function loadAccount() {
 async function showConnect(force = false) {
     const box = $('#connectBox');
     const pl = state.data && state.data.playlist;
-    const partial = pl && pl.loaded < pl.total;
+    const partial = pl && pl.loaded < pl.total && isSpotifyPl(pl.id);
     if (state.connected || (!partial && !force)) { box.classList.add('hidden'); return; }
     const { url, redirect_uri } = await api('api/spotify/auth-url');
     box.innerHTML = `
@@ -106,18 +114,53 @@ async function loadSaved() {
     return list;
 }
 
-async function importPlaylist(url) {
-    const btn = $('#importBtn');
-    btn.disabled = true; btn.textContent = 'Cargando…';
+// muestra el avance mientras el servidor lee la playlist y busca las canciones en el catálogo
+function watchProgress(token) {
+    const box = $('#importStatus');
+    box.textContent = 'Leyendo la lista…';
+    box.classList.remove('hidden');
+    const started = Date.now();
+    let stop = false;
+    (async function tick() {
+        if (stop) return;
+        try {
+            const p = await api(`api/import/progress/${token}`);
+            const secs = Math.round((Date.now() - started) / 1000);
+            if (p.stage === 'resolving' && p.total) {
+                box.textContent = `Buscando las canciones en el catálogo: ${p.done} de ${p.total} (${secs} s)…`;
+            } else if (p.stage === 'saving') {
+                box.textContent = 'Guardando y revisando tu biblioteca…';
+            } else if (secs > 2) {
+                box.textContent = `Leyendo la lista… (${secs} s)`;
+            }
+        } catch (_) { /* sin progreso: se sigue esperando */ }
+        if (!stop) setTimeout(tick, 1000);
+    })();
+    return () => { stop = true; box.classList.add('hidden'); };
+}
+
+async function importPlaylist(url, extra = null) {
+    const btns = [$('#importBtn'), $('#txtImport')];
+    const btn = extra ? $('#txtImport') : $('#importBtn');
+    const label = btn.textContent;
+    btns.forEach((b) => { b.disabled = true; });
+    btn.textContent = 'Cargando…';
+    const token = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    const done = watchProgress(token);
     try {
-        const r = await api('api/playlists/import', { method: 'POST', body: { url } });
-        toast(`${r.name}: ${r.loaded} canciones cargadas${r.loaded < r.total ? ` de ${r.total}` : ''}`);
+        const r = await api('api/playlists/import', { method: 'POST', body: { url: url || '', token, ...(extra || {}) } });
+        let msg = `${r.name}: ${r.loaded} canciones cargadas${r.loaded < r.total ? ` de ${r.total}` : ''}`;
+        if (r.unresolved) msg += ` · ${r.unresolved} no encontradas en el catálogo (búscalas a mano)`;
+        if (r.ignored && r.ignored.length) msg += ` · ${r.ignored.length} líneas ignoradas`;
+        toast(msg, false, r.unresolved || (r.ignored && r.ignored.length) ? 9000 : 3000);
         if (r.user_error) toast('No se pudo leer con tu cuenta: ' + r.user_error, true);
+        if (r.ignored && r.ignored.length) console.info('Líneas ignoradas:', r.ignored);
         $('#plUrl').value = '';
+        if (extra) { $('#txtList').value = ''; $('#txtName').value = ''; $('#txtFileName').textContent = ''; $('#textBox').classList.add('hidden'); }
         await loadSaved();
         await openPlaylist(r.id);
     } catch (e) { toast(e.message, true); }
-    finally { btn.disabled = false; btn.textContent = 'Cargar'; }
+    finally { done(); btns.forEach((b) => { b.disabled = false; }); btn.textContent = label; }
 }
 
 async function openPlaylist(pid) {
@@ -149,10 +192,13 @@ function renderSummary() {
     const { playlist: pl, tracks, bulk } = state.data;
     const n = (sts) => tracks.filter((t) => !sts || sts.includes(t.status)).length;
     const done = n(DONE);
+    const unres = tracks.filter(isUnresolved).length;
     $('#plName').textContent = pl.name;
     $('#plMeta').innerHTML = `${esc(pl.owner || '')} · ${pl.loaded}${pl.loaded < pl.total ? ` de ${pl.total}` : ''} canciones · ` +
         `<b style="color:var(--text)">${done}</b> listas, <b style="color:#ff8a8d">${n(['missing', 'error'])}</b> faltan` +
-        (pl.loaded < pl.total ? ' · <a href="#" id="needLogin">cargar las demás</a>' : '');
+        (pl.loaded < pl.total && isSpotifyPl(pl.id) ? ' · <a href="#" id="needLogin">cargar las demás</a>' : '') +
+        (unres ? ` · <span style="color:#ffc35c">${unres} sin catálogo</span>` : '');
+    $('#reloadBtn').classList.toggle('hidden', pl.id.startsWith('txt:'));
     const nl = $('#needLogin'); if (nl) nl.onclick = (e) => { e.preventDefault(); showConnect(true); window.scrollTo(0, 0); };
     $('#progFill').style.width = tracks.length ? `${(done / tracks.length) * 100}%` : '0';
 
@@ -169,9 +215,12 @@ function renderSummary() {
         bb.disabled = true;
     } else {
         bar.classList.add('hidden');
-        bb.disabled = bulk.running || !n(['missing', 'error']);
+        bb.disabled = bulk.running || !bulkable().length;
     }
 }
+
+// las que no están en el catálogo y no traen video de YouTube se descargan eligiendo el video a mano
+const bulkable = () => state.data.tracks.filter((t) => ['missing', 'error'].includes(t.status) && !(isUnresolved(t) && !t.video_id));
 
 function sig(t) { return [t.status, t.progress, t.file_rel, t.match_rel, t.note, t.album_art].join('|'); }
 
@@ -225,7 +274,9 @@ function rowHtml(t) {
     let acts = '';
     switch (t.status) {
         case 'missing': case 'error':
-            acts = B('search', '🔍 Buscar', 'primary') + B('auto', 'Descargar automática') + B('have', 'Ya la tengo') + B('skip', 'Omitir'); break;
+            acts = B('search', '🔍 Buscar', 'primary') +
+                (t.video_id ? B('auto', 'Descargar video de la playlist') : isUnresolved(t) ? '' : B('auto', 'Descargar automática')) +
+                B('have', 'Ya la tengo') + B('skip', 'Omitir'); break;
         case 'maybe':
             acts = B('play-match', '▶') + B('have', 'Sí es', 'ok') + B('missing', 'No es', 'bad'); break;
         case 'auto':
@@ -242,12 +293,12 @@ function rowHtml(t) {
         <div class="pos">${t.position + 1}</div>
         ${art}
         <div class="info">
-            <div class="title"><a href="${esc(trackUrl(t.track_id))}" target="_blank" rel="noopener">${esc(t.name)}</a></div>
+            <div class="title"><a href="${esc(trackUrl(t))}" target="_blank" rel="noopener">${esc(t.name)}</a></div>
             <div class="sub">${esc(t.artist)}${t.album ? ' · ' + esc(t.album) : ''} · ${fmtDur(t.duration_ms)}</div>
             ${extra}
         </div>
         <div class="side">
-            <span class="badge b-${t.status}">${LABEL[t.status] || t.status}</span>
+            <div>${isUnresolved(t) ? '<span class="badge b-unres" title="No se encontró en Deezer/Spotify: búscala a mano; se descargará con metadatos básicos">Sin catálogo</span>' : ''}<span class="badge b-${t.status}">${LABEL[t.status] || t.status}</span></div>
             <div class="acts">${acts}</div>
         </div>`;
 }
@@ -358,10 +409,32 @@ $('#rescanBtn').onclick = async () => {
     catch (e) { toast(e.message, true); }
 };
 $('#bulkBtn').onclick = async () => {
-    const n = state.data.tracks.filter((t) => ['missing', 'error'].includes(t.status)).length;
-    if (!confirm(`Se van a descargar ${n} canciones automáticamente (elige la mejor coincidencia de YouTube). Después puedes escucharlas y aprobarlas o rechazarlas. ¿Continuar?`)) return;
+    const n = bulkable().length;
+    const manual = state.data.tracks.filter((t) => ['missing', 'error'].includes(t.status)).length - n;
+    if (!confirm(`Se van a descargar ${n} canciones automáticamente (elige la mejor coincidencia de YouTube, o el video de la playlist si vino de YouTube). Después puedes escucharlas y aprobarlas o rechazarlas.` +
+        (manual ? ` ${manual} canciones sin catálogo quedan fuera: descárgalas con «Buscar».` : '') + ' ¿Continuar?')) return;
     try { await api(`api/playlists/${state.pid}/download-missing`, { method: 'POST' }); state.filter = 'active'; await refresh(); }
     catch (e) { toast(e.message, true); }
+};
+$('#textToggle').onclick = () => { $('#textBox').classList.toggle('hidden'); if (!$('#textBox').classList.contains('hidden')) $('#txtList').focus(); };
+$('#txtFile').onchange = (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    if (f.size > 2 * 1024 * 1024) { toast('El archivo es demasiado grande (máximo 2 MB)', true); e.target.value = ''; return; }
+    const rd = new FileReader();
+    rd.onload = () => {
+        $('#txtList').value = rd.result;
+        $('#txtFileName').textContent = f.name;
+        if (!$('#txtName').value.trim()) $('#txtName').value = f.name.replace(/\.(csv|tsv|txt)$/i, '');
+    };
+    rd.onerror = () => toast('No se pudo leer el archivo', true);
+    rd.readAsText(f);
+    e.target.value = '';
+};
+$('#txtImport').onclick = () => {
+    const text = $('#txtList').value;
+    if (!text.trim()) { toast('Pega una lista o elige un archivo', true); return; }
+    importPlaylist('', { text, name: $('#txtName').value.trim() || null });
 };
 $('#filterText').oninput = (e) => { state.text = e.target.value; applyFilter(); };
 

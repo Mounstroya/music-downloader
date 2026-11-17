@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Revisar playlist</title>
     <base href="{{ request.scope.get('root_path', '') }}/">
-    <link rel="stylesheet" href="static/playlist.css?v=1">
+    <link rel="stylesheet" href="static/playlist.css?v=2">
 </head>
 <body>
 <div class="wrap">
@@ -18,9 +18,23 @@
 
     <section class="card" id="importCard">
         <form id="importForm" class="row">
-            <input id="plUrl" type="text" placeholder="Pega el link de una playlist de Spotify o Deezer" autocomplete="off">
+            <input id="plUrl" type="text" placeholder="Link de playlist: Spotify, Deezer, YouTube Music/YouTube o Apple Music" autocomplete="off">
             <button class="btn primary" type="submit" id="importBtn">Cargar</button>
+            <button class="btn" type="button" id="textToggle">Pegar lista o subir CSV</button>
         </form>
+        <div id="textBox" class="textbox hidden">
+            <div class="muted">Una canción por línea: <code>Artista - Canción</code> (también sirve <code>Canción - Artista</code>, tabuladores o comas).
+                O sube un CSV con encabezados (p. ej. exportado con Exportify: <i>Track Name</i>, <i>Artist Name(s)</i>, <i>ISRC</i>…).</div>
+            <input id="txtName" type="text" placeholder="Nombre de la lista (opcional)" maxlength="120" autocomplete="off">
+            <textarea id="txtList" rows="8" placeholder="Queen - Bohemian Rhapsody&#10;Soda Stereo - De Música Ligera&#10;Blinding Lights - The Weeknd"></textarea>
+            <div class="row wrap-row">
+                <label class="btn file">Elegir archivo CSV/TXT<input id="txtFile" type="file" accept=".csv,.tsv,.txt,text/csv,text/plain" hidden></label>
+                <span id="txtFileName" class="muted"></span>
+                <span style="flex:1"></span>
+                <button class="btn primary" type="button" id="txtImport">Importar lista</button>
+            </div>
+        </div>
+        <div id="importStatus" class="muted import-status hidden"></div>
         <div id="savedPlaylists" class="saved"></div>
         <div id="connectBox" class="notice hidden"></div>
     </section>
@@ -47,6 +61,6 @@
     </section>
 </div>
 <div id="toast" class="toast hidden"></div>
-<script src="static/playlist.js?v=1"></script>
+<script src="static/playlist.js?v=2"></script>
 </body>
 </html>

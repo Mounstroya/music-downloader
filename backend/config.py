@@ -17,6 +17,7 @@ NAVIDROME_PASSWORD = os.getenv("NAVIDROME_PASSWORD", "")
 
 # Download Configuration
 DOWNLOAD_DIR = os.getenv("DOWNLOAD_DIR", "./downloads")  # Temporary download location for testing
+METADATA_SOURCE = os.getenv("METADATA_SOURCE", "auto").lower()  # auto | spotify | deezer
 OUTPUT_FORMAT = os.getenv("OUTPUT_FORMAT", "mp3")
 AUDIO_QUALITY = os.getenv("AUDIO_QUALITY", "128")  # kbps (lower = smaller files, 128 is good balance)
 

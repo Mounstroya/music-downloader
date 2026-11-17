@@ -187,11 +187,29 @@ async function handleSearch() {
     }
 }
 
+// Fuente de metadatos elegida en el selector (se recuerda en este navegador)
+function getMetadataSource() {
+    const el = document.getElementById('metadataSource');
+    return el ? el.value : null;
+}
+(function initMetadataSource() {
+    const el = document.getElementById('metadataSource');
+    if (!el) return;
+    try { const v = localStorage.getItem('metadataSource'); if (v) el.value = v; } catch (_) { /* sin storage */ }
+    el.addEventListener('change', () => { try { localStorage.setItem('metadataSource', el.value); } catch (_) { /* sin storage */ } });
+    fetch('api/health').then((r) => r.json()).then((h) => {
+        if (!(h.metadata_sources || []).includes('spotify')) {
+            el.querySelector('option[value="spotify"]').disabled = true;
+            if (el.value === 'spotify') el.value = 'deezer';
+        }
+    }).catch(() => {});
+})();
+
 async function searchTracks(query, limit = PAGE_SIZE, offset = 0) {
     const response = await fetch(`api/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, limit, offset }),
+        body: JSON.stringify({ query, limit, offset, source: getMetadataSource() }),
     });
 
     if (!response.ok) {
@@ -404,7 +422,7 @@ async function searchAlbums(query, limit = PAGE_SIZE, offset = 0) {
     const response = await fetch(`api/search/albums`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, limit, offset }),
+        body: JSON.stringify({ query, limit, offset, source: getMetadataSource() }),
     });
 
     if (!response.ok) {

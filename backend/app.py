@@ -18,6 +18,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 import config
 from services.spotify import SpotifyService
+from services.catalog import CatalogService
 from utils.job_store import init_jobs_db, upsert_job, get_job, get_album_aggregate
 
 
@@ -70,12 +71,17 @@ metadata_service = MetadataService()
 navidrome_service = NavidromeService()
 lyrics_service = LyricsService()
 
+# Spotify (si hay llaves) + Deezer (siempre, no necesita llaves) detrás de una sola interfaz
+catalog = CatalogService(spotify_service, source=config.METADATA_SOURCE)
+print(f"Fuentes de metadatos: {catalog.available()} (modo {catalog.source})")
+
 
 # Request models
 class SearchRequest(BaseModel):
     query: str
     limit: Optional[int] = 10
     offset: Optional[int] = 0
+    source: Optional[str] = None  # 'spotify' | 'deezer' | 'auto' (por defecto el de METADATA_SOURCE)
 
 
 class DownloadRequest(BaseModel):
@@ -117,6 +123,7 @@ class TrackResponse(BaseModel):
     preview_url: Optional[str]
     album_art: Optional[str]
     release_date: str
+    source: Optional[str] = None  # 'spotify' | 'deezer'
 
 
 class DownloadStatusResponse(BaseModel):
@@ -153,7 +160,7 @@ def download_and_process(track_id: str, location: str = "local", video_id: str =
         )
 
         # Get track details from Spotify
-        track_info = spotify_service.get_track_details(track_id)
+        track_info = catalog.get_track_details(track_id)
         if not track_info:
             upsert_job(track_id,
                        status="error",
@@ -326,11 +333,11 @@ async def root(request: Request):
 @app.post("/api/search", response_model=List[TrackResponse])
 async def search_tracks(request: SearchRequest):
     """Search for tracks on Spotify"""
-    if not spotify_service:
+    if not catalog:
         raise HTTPException(status_code=500, detail="Spotify service not configured")
 
     try:
-        tracks = spotify_service.search_tracks(request.query, request.limit, request.offset or 0)
+        tracks = catalog.search_tracks(request.query, request.limit, request.offset or 0, source=request.source)
         return tracks
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
@@ -339,7 +346,7 @@ async def search_tracks(request: SearchRequest):
 @app.post("/api/reverse/youtube")
 async def reverse_lookup_youtube(request: ReverseLookupRequest):
     """Given a YouTube/YouTube Music URL, extract title via yt-dlp and search Spotify."""
-    if not spotify_service:
+    if not catalog:
         raise HTTPException(status_code=500, detail="Spotify service not configured")
 
     try:
@@ -352,7 +359,7 @@ async def reverse_lookup_youtube(request: ReverseLookupRequest):
         if not title:
             raise HTTPException(status_code=400, detail="YouTube title was empty")
 
-        spotify_candidates = spotify_service.search_tracks(title, limit=5)
+        spotify_candidates = catalog.search_tracks(title, limit=5)
 
         return {
             "youtube": yt_info,
@@ -368,13 +375,13 @@ async def reverse_lookup_youtube(request: ReverseLookupRequest):
 @app.post("/api/search/tracks/top")
 async def search_tracks_top(request: SearchRequest):
     """Search for tracks on Spotify with a small, fixed default suitable for pick-lists."""
-    if not spotify_service:
+    if not catalog:
         raise HTTPException(status_code=500, detail="Spotify service not configured")
 
     try:
         limit = request.limit or 5
         limit = max(1, min(int(limit), 10))
-        return spotify_service.search_tracks(request.query, limit=limit)
+        return catalog.search_tracks(request.query, limit=limit, source=request.source)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
@@ -382,11 +389,11 @@ async def search_tracks_top(request: SearchRequest):
 @app.post("/api/search/albums")
 async def search_albums(request: SearchRequest):
     """Search for albums on Spotify"""
-    if not spotify_service:
+    if not catalog:
         raise HTTPException(status_code=500, detail="Spotify service not configured")
 
     try:
-        albums = spotify_service.search_albums(request.query, request.limit, request.offset or 0)
+        albums = catalog.search_albums(request.query, request.limit, request.offset or 0, source=request.source)
         return albums
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Album search failed: {str(e)}")
@@ -395,11 +402,11 @@ async def search_albums(request: SearchRequest):
 @app.get("/api/album/{album_id}")
 async def get_album(album_id: str):
     """Get album details including all tracks"""
-    if not spotify_service:
+    if not catalog:
         raise HTTPException(status_code=500, detail="Spotify service not configured")
 
     try:
-        album = spotify_service.get_album_details(album_id)
+        album = catalog.get_album_details(album_id)
         if not album:
             raise HTTPException(status_code=404, detail="Album not found")
         return album
@@ -412,11 +419,11 @@ async def get_album(album_id: str):
 @app.get("/api/track/{track_id}", response_model=TrackResponse)
 async def get_track(track_id: str):
     """Get details for a specific track"""
-    if not spotify_service:
+    if not catalog:
         raise HTTPException(status_code=500, detail="Spotify service not configured")
 
     try:
-        track = spotify_service.get_track_details(track_id)
+        track = catalog.get_track_details(track_id)
         if not track:
             raise HTTPException(status_code=404, detail="Track not found")
         return track
@@ -429,7 +436,7 @@ async def get_track(track_id: str):
 @app.post("/api/download")
 async def download_track(request: DownloadRequest, background_tasks: BackgroundTasks):
     """Start downloading a track"""
-    if not spotify_service:
+    if not catalog:
         raise HTTPException(status_code=500, detail="Spotify service not configured")
 
     # Validate location
@@ -476,7 +483,7 @@ def reverse_download_and_process(job_id: str, youtube_url: str, location: str, s
         if spotify_track_id:
             upsert_job(job_id, status="processing", message="Fetching Spotify track info...", stage="fetching",
                        progress=20)
-            track_info = spotify_service.get_track_details(spotify_track_id)
+            track_info = catalog.get_track_details(spotify_track_id)
             if not track_info:
                 upsert_job(job_id, status="error", message="Could not fetch Spotify track information", progress=0)
                 return
@@ -591,7 +598,7 @@ def reverse_download_and_process(job_id: str, youtube_url: str, location: str, s
 @app.post("/api/reverse/download")
 async def reverse_download(request: ReverseDownloadRequest, background_tasks: BackgroundTasks):
     """Finalize reverse flow: download YouTube URL and tag with chosen Spotify track or manual metadata."""
-    if not spotify_service:
+    if not catalog:
         raise HTTPException(status_code=500, detail="Spotify service not configured")
 
     # Validate location
@@ -647,11 +654,11 @@ async def download_album(request: AlbumDownloadRequest, background_tasks: Backgr
 
     album_job_id = f"album:{request.album_id}"
 
-    if not spotify_service:
+    if not catalog:
         raise HTTPException(status_code=500, detail="Spotify service not configured")
 
     # Get album details
-    album = spotify_service.get_album_details(request.album_id)
+    album = catalog.get_album_details(request.album_id)
 
     if not album:
         raise HTTPException(status_code=404, detail="Album not found")
@@ -739,12 +746,12 @@ async def get_album_download_status(album_id: str):
 @app.get("/api/youtube/candidates/{track_id}")
 async def get_youtube_candidates(track_id: str):
     """Get YouTube candidates for a track to let user choose if confidence is low"""
-    if not spotify_service:
+    if not catalog:
         raise HTTPException(status_code=500, detail="Spotify service not configured")
 
     try:
         # Get track details from Spotify
-        track_info = spotify_service.get_track_details(track_id)
+        track_info = catalog.get_track_details(track_id)
         if not track_info:
             raise HTTPException(status_code=404, detail="Track not found")
 
@@ -837,12 +844,12 @@ def cleanup_temp_file(file_path: str):
 @app.get("/api/track/{track_id}/exists")
 async def check_track_exists(track_id: str):
     """Check if a track file already exists in downloads"""
-    if not spotify_service:
+    if not catalog:
         raise HTTPException(status_code=500, detail="Spotify service not configured")
 
     try:
         # Get track details from Spotify
-        track_info = spotify_service.get_track_details(track_id)
+        track_info = catalog.get_track_details(track_id)
         if not track_info:
             return {"exists": False}
 
@@ -887,13 +894,15 @@ async def health_check():
     return {
         "status": "healthy",
         "spotify_configured": spotify_service is not None,
+        "metadata_sources": catalog.available(),
+        "metadata_source": catalog.source,
         "navidrome_path": config.NAVIDROME_MUSIC_PATH
     }
 
 
 from playlist_feature import build_router as build_playlist_router
 
-app.include_router(build_playlist_router(spotify_service, youtube_service, download_and_process, templates))
+app.include_router(build_playlist_router(catalog, youtube_service, download_and_process, templates))
 from youtube_cookies import build_router as build_cookies_router
 
 app.include_router(build_cookies_router())

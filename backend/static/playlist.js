@@ -41,6 +41,7 @@ async function api(path, opts = {}) {
     return data;
 }
 
+const trackUrl = (id) => id.startsWith('dz:') ? `https://www.deezer.com/track/${id.slice(3)}` : `https://open.spotify.com/track/${id}`;
 const fmtDur = (ms) => { const s = Math.round((ms || 0) / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 
 // ------------------------------------------------------------------ cuenta Spotify
@@ -241,7 +242,7 @@ function rowHtml(t) {
         <div class="pos">${t.position + 1}</div>
         ${art}
         <div class="info">
-            <div class="title"><a href="https://open.spotify.com/track/${esc(t.track_id)}" target="_blank" rel="noopener">${esc(t.name)}</a></div>
+            <div class="title"><a href="${esc(trackUrl(t.track_id))}" target="_blank" rel="noopener">${esc(t.name)}</a></div>
             <div class="sub">${esc(t.artist)}${t.album ? ' · ' + esc(t.album) : ''} · ${fmtDur(t.duration_ms)}</div>
             ${extra}
         </div>

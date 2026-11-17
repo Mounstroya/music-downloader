@@ -173,12 +173,24 @@ class Library:
 
 # ---------------------------------------------------------------- Spotify
 def parse_playlist_id(url: str) -> str:
-    m = re.search(r"playlist[/:]([A-Za-z0-9]{22})", url or "")
+    """Devuelve el ID interno de la playlist: "<id de Spotify>" o "dz:<id de Deezer>"."""
+    url = (url or "").strip()
+    if re.search(r"(^|\.)(deezer\.page\.link|link\.deezer\.com)/", url):
+        try:  # links cortos de "Compartir" en la app de Deezer
+            url = requests.get(url, timeout=15, allow_redirects=True).url
+        except Exception:
+            raise HTTPException(400, "No pude abrir ese link corto de Deezer")
+    m = re.search(r"deezer\.com/(?:[a-z]{2}(?:-[a-z]{2})?/)?playlist/(\d+)", url)
+    if m:
+        return "dz:" + m.group(1)
+    if re.fullmatch(r"dz:\d+", url):
+        return url
+    m = re.search(r"playlist[/:]([A-Za-z0-9]{22})", url)
     if m:
         return m.group(1)
-    if re.fullmatch(r"[A-Za-z0-9]{22}", (url or "").strip()):
-        return url.strip()
-    raise HTTPException(400, "No reconozco ese link de playlist de Spotify")
+    if re.fullmatch(r"[A-Za-z0-9]{22}", url):
+        return url
+    raise HTTPException(400, "No reconozco ese link. Pega el link de una playlist de Spotify o Deezer.")
 
 
 def _oauth() -> SpotifyOAuth:
@@ -278,7 +290,7 @@ class DownloadReq(BaseModel):
     video_id: Optional[str] = None
 
 
-def build_router(spotify_service, youtube_service, download_and_process: Callable, templates) -> APIRouter:
+def build_router(catalog, youtube_service, download_and_process: Callable, templates) -> APIRouter:
     init_db()
     lib = Library(config.NAVIDROME_MUSIC_PATH)
     r = APIRouter()
@@ -394,14 +406,21 @@ def build_router(spotify_service, youtube_service, download_and_process: Callabl
     async def import_playlist(req: ImportReq):
         pid = parse_playlist_id(req.url)
         data, err = None, None
-        try:
-            sp = user_client()
-            if sp:
-                data = fetch_with_user(sp, pid)
-        except Exception as e:
-            err = str(e)
-        if data is None:
-            data = fetch_from_embed(pid)
+        if pid.startswith("dz:"):
+            try:
+                data = catalog.deezer.get_playlist(pid)
+            except Exception as e:
+                raise HTTPException(502, f"Deezer no devolvió la playlist (¿es pública?): {e}")
+            data = {**data, "skipped": data["total"] - len(data["tracks"]), "source": "deezer"}
+        else:
+            try:
+                sp = user_client()
+                if sp:
+                    data = fetch_with_user(sp, pid)
+            except Exception as e:
+                err = str(e)
+            if data is None:
+                data = fetch_from_embed(pid)
         lib.scan()
         now = int(time.time())
         with _db_lock, _db() as c:
@@ -424,7 +443,7 @@ def build_router(spotify_service, youtube_service, download_and_process: Callabl
                               (pid, t["id"], pos, t["name"], ", ".join(t["artists"]), json.dumps(t["artists"]),
                                t["album"], t["duration_ms"], t["album_art"], now))
             # solo borra las que ya no están si se cargó la playlist completa
-            if data["source"] == "cuenta":
+            if data["source"] in ("cuenta", "deezer"):
                 for tid in set(old) - keep:
                     c.execute("DELETE FROM ptracks WHERE playlist_id=? AND track_id=?", (pid, tid))
         rematch(pid)
@@ -496,8 +515,6 @@ def build_router(spotify_service, youtube_service, download_and_process: Callabl
     @r.post("/api/playlists/{pid}/tracks/{tid}/download")
     async def download(pid: str, tid: str, req: DownloadReq, bg: BackgroundTasks):
         get_row(pid, tid)
-        if spotify_service is None:
-            raise HTTPException(500, "Spotify no está configurado")
         queue_download(pid, tid)
         bg.add_task(download_and_process, tid, "navidrome", req.video_id)
         return {"ok": True}

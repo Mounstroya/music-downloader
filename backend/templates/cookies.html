@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cookies de YouTube</title>
+    <base href="{{ request.scope.get('root_path', '') }}/">
+    <link rel="stylesheet" href="static/playlist.css?v=2">
+    <style>
+        .steps { margin: 6px 0 10px; padding-left: 20px; }
+        .steps li { margin: 4px 0; }
+        textarea { width: 100%; min-height: 130px; background: var(--card2); color: var(--text); border: 1px solid var(--line);
+                   border-radius: 8px; padding: 10px; font: 12px/1.4 ui-monospace, monospace; resize: vertical; }
+        .st { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+        .st .big { font-size: 18px; font-weight: 700; }
+        .ok { color: #5fe08f; } .bad { color: #ff8a8d; } .warn { color: #ffc35c; }
+        .oslist { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+        .cmd { background: #000; border-radius: 6px; padding: 8px 10px; font: 13px ui-monospace, monospace; word-break: break-all; user-select: all; }
+        h2 { font-size: 17px; margin: 0 0 6px; }
+        details summary { cursor: pointer; color: var(--muted); font-size: 13px; margin-top: 6px; }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <header class="top">
+        <a href="./" class="back">← Buscador</a>
+        <h1>Cookies de YouTube</h1>
+        <a href="playlist" class="back">Revisar playlist →</a>
+    </header>
+
+    <section class="card">
+        <div class="st" id="status"><span class="muted">Cargando…</span></div>
+        <p class="muted" style="margin:10px 0 0">
+            Con una sesión de YouTube, las descargas casi nunca fallan con <i>"Sign in to confirm you're not a bot"</i>.
+            Usa de preferencia una <b>cuenta de Google secundaria</b>: YouTube a veces suspende cuentas que usa con descargadores.
+            Las cookies se guardan solo en este servidor, nunca se muestran en la página, y solo se guardan las de YouTube/Google.
+        </p>
+    </section>
+
+    <section class="card">
+        <h2>Opción 1 · Automático, desde tu navegador</h2>
+        <ol class="steps">
+            <li>En tu computadora, entra a <a href="https://www.youtube.com" target="_blank" rel="noopener">youtube.com</a> con la cuenta que quieras usar.</li>
+            <li><b>Cierra el navegador</b> por completo (si está abierto, a veces no deja leer sus cookies).</li>
+            <li>Descarga y ejecuta el programa para tu sistema. Busca tu sesión en Firefox, Chrome, Edge, Brave, etc. y la sube aquí sola.</li>
+        </ol>
+        <div class="oslist" id="osButtons"></div>
+        <div id="osHelp" class="muted"></div>
+        <details>
+            <summary>Notas</summary>
+            <ul class="muted">
+                <li>El programa descarga <a href="https://github.com/yt-dlp/yt-dlp" target="_blank" rel="noopener">yt-dlp</a> (oficial) a una carpeta temporal y la borra al terminar.</li>
+                <li>Cada descarga trae un código de subida que vence en 30 minutos y solo sirve una vez.</li>
+                <li><b>Chrome en Windows</b> cifra sus cookies de forma que ningún programa externo puede leerlas. Usa Firefox o la opción 2.</li>
+                <li>Como usa tu navegador de diario, YouTube puede renovar esas cookies y las del servidor caducan antes. Si pasa seguido, usa la opción 2 con una ventana de incógnito; así duran meses.</li>
+            </ul>
+        </details>
+    </section>
+
+    <section class="card">
+        <h2>Opción 2 · Manual (la que más dura)</h2>
+        <ol class="steps">
+            <li>Instala la extensión <b>Get cookies.txt LOCALLY</b>
+                (<a href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc" target="_blank" rel="noopener">Chrome</a> ·
+                <a href="https://addons.mozilla.org/firefox/addon/get-cookies-txt-locally/" target="_blank" rel="noopener">Firefox</a>)
+                y permite que funcione en ventanas de incógnito/privadas.</li>
+            <li>Abre una <b>ventana de incógnito</b> y entra a youtube.com con tu cuenta.</li>
+            <li>En esa misma pestaña, abre la extensión y exporta (<i>Export</i>) en formato Netscape.</li>
+            <li><b>Cierra la ventana de incógnito</b> sin cerrar sesión. Así YouTube no renueva esas cookies y duran mucho más.</li>
+            <li>Sube el archivo o pega su contenido aquí:</li>
+        </ol>
+        <input type="file" id="file" accept=".txt,.json,text/plain,application/json">
+        <textarea id="text" placeholder="# Netscape HTTP Cookie File&#10;.youtube.com	TRUE	/	TRUE	…"></textarea>
+        <div class="row" style="margin-top:8px">
+            <button class="btn primary" id="save">Guardar y probar</button>
+        </div>
+    </section>
+</div>
+<div id="toast" class="toast hidden"></div>
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function toast(m, err) { const t = $('#toast'); t.textContent = m; t.className = 'toast' + (err ? ' err' : ''); clearTimeout(t._h); t._h = setTimeout(() => t.classList.add('hidden'), err ? 7000 : 3500); }
+async function api(path, opts = {}) {
+    const o = { ...opts };
+    if (o.body && typeof o.body !== 'string') { o.body = JSON.stringify(o.body); o.headers = { 'Content-Type': 'application/json' }; }
+    const r = await fetch(path, o); let d = null; try { d = await r.json(); } catch (_) {}
+    if (!r.ok) throw new Error((d && d.detail) || `Error ${r.status}`); return d;
+}
+const fdate = (s) => s ? new Date(s * 1000).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+
+function renderStatus(s) {
+    const box = $('#status');
+    if (!s.configured) {
+        box.innerHTML = '<span class="big warn">Sin cookies</span><span class="muted">Las descargas funcionan, pero YouTube puede bloquear de vez en cuando.</span>';
+        return;
+    }
+    const t = s.test || {};
+    const cls = t.ok ? 'ok' : t.logged_in === false ? 'bad' : 'warn';
+    const label = t.ok ? 'Conectado ✔' : t.logged_in === false ? 'Caducadas' : 'Guardadas (con advertencia)';
+    box.innerHTML = `
+        <span class="big ${cls}">${label}</span>
+        <span class="muted">${esc(t.message || '')}<br>Subidas: ${fdate(s.uploaded_at)} · origen: ${esc(s.source || '—')} · última prueba: ${fdate(s.tested_at)}${s.expires_at ? ' · la cookie de sesión vence: ' + fdate(s.expires_at) : ''}</span>
+        <span style="flex:1"></span>
+        <button class="btn sm" id="test">Probar otra vez</button>
+        <button class="btn sm bad" id="del">Borrar</button>`;
+    $('#test').onclick = async (e) => { e.target.disabled = true; e.target.textContent = 'Probando…'; try { renderStatus(await api('api/youtube-cookies/test', { method: 'POST' })); } catch (er) { toast(er.message, true); load(); } };
+    $('#del').onclick = async () => { if (!confirm('¿Borrar las cookies de YouTube del servidor?')) return; renderStatus(await api('api/youtube-cookies', { method: 'DELETE' })); toast('Cookies borradas'); };
+}
+async function load() { try { renderStatus(await api('api/youtube-cookies/status')); } catch (e) { toast(e.message, true); } }
+
+// ---- opción 1: programa por sistema
+const ua = navigator.userAgent;
+const myOs = /Windows/i.test(ua) ? 'windows' : /Mac/i.test(ua) && !/iPhone|iPad/i.test(ua) ? 'mac' : /Linux/i.test(ua) && !/Android/i.test(ua) ? 'linux' : null;
+const OS = { windows: 'Windows', mac: 'Mac', linux: 'Linux' };
+const base = new URL('api/youtube-cookies/helper/', document.baseURI).href;
+$('#osButtons').innerHTML = Object.entries(OS).map(([k, v]) =>
+    `<a class="btn ${k === myOs ? 'primary' : ''}" href="api/youtube-cookies/helper/${k}" data-os="${k}">Descargar para ${v}</a>`).join('');
+const HELP = {
+    windows: 'Ejecuta <b>cookies-youtube.bat</b> desde tus Descargas. Si Windows muestra "Windows protegió su PC", da clic en <i>Más información → Ejecutar de todas formas</i>.',
+    mac: `Abre la app <b>Terminal</b> y pega este comando (o el archivo descargado, con <i>bash ~/Downloads/cookies-youtube.command</i>):<div class="cmd">bash <(curl -fsSL '${base}mac')</div>`,
+    linux: `En una terminal, pega este comando (o ejecuta <i>bash ~/Downloads/cookies-youtube.sh</i>):<div class="cmd">bash <(curl -fsSL '${base}linux')</div>`,
+};
+function showHelp(os) { $('#osHelp').innerHTML = os ? HELP[os] : 'Desde el celular no se puede; abre esta página en tu computadora o usa la opción 2.'; }
+showHelp(myOs);
+document.querySelectorAll('[data-os]').forEach((a) => a.addEventListener('click', () => {
+    showHelp(a.dataset.os);
+    // espera a que el script suba las cookies y actualiza el estado
+    let n = 0; clearInterval(window._poll);
+    const before = $('#status').textContent;
+    window._poll = setInterval(async () => {
+        if (++n > 120) return clearInterval(window._poll);
+        const s = await api('api/youtube-cookies/status').catch(() => null);
+        if (s && s.configured && s.source && s.source.startsWith('auto') && Date.now() / 1000 - s.uploaded_at < 600) {
+            renderStatus(s); if ($('#status').textContent !== before) { toast('Cookies recibidas desde tu navegador ✔'); clearInterval(window._poll); }
+        }
+    }, 5000);
+}));
+
+// ---- opción 2: manual
+$('#file').onchange = async (e) => { const f = e.target.files[0]; if (f) $('#text').value = await f.text(); };
+$('#save').onclick = async (e) => {
+    const text = $('#text').value.trim();
+    if (!text) return toast('Pega el contenido del cookies.txt o elige el archivo', true);
+    e.target.disabled = true; e.target.textContent = 'Probando con YouTube…';
+    try { renderStatus(await api('api/youtube-cookies', { method: 'POST', body: { text } })); $('#text').value = ''; $('#file').value = ''; toast('Cookies guardadas ✔'); }
+    catch (er) { toast(er.message, true); }
+    finally { e.target.disabled = false; e.target.textContent = 'Guardar y probar'; }
+};
+load();
+</script>
+</body>
+</html>

@@ -109,7 +109,16 @@ class NavidromeService:
             }
 
             response = requests.get(url, params=params, timeout=10)
-            return response.status_code == 200
+            # Subsonic responde 200 aunque falle la autenticación: hay que revisar el cuerpo
+            try:
+                sub = response.json().get('subsonic-response', {})
+            except ValueError:
+                sub = {}
+            if response.status_code == 200 and sub.get('status') == 'ok':
+                return True
+            err = (sub.get('error') or {}).get('message') or f"HTTP {response.status_code}"
+            print(f"Navidrome no aceptó el reescaneo: {err} (revisa NAVIDROME_USERNAME/NAVIDROME_PASSWORD)")
+            return False
 
         except Exception as e:
             # no imprimir `e` tal cual: la URL de la petición va dentro del mensaje

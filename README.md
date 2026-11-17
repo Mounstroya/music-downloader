@@ -4,6 +4,8 @@
 
 > **⚠️ Announcement (March 2025):** Spotify is changing their API requirements. **Apps using Development Mode will stop working after March 9, 2026** unless the app owner has an active Spotify Premium subscription. Migration to a free metadata source (e.g. MusicBrainz) is planned. See [Spotify's migration guide](https://developer.spotify.com/documentation/web-api/tutorials/february-2026-migration-guide) for details.
 
+**Demo: https://mounstroya.github.io/music-downloader/** — try the real interface in your browser with sample data (nothing is downloaded). See [Live demo](#live-demo-github-pages).
+
 A modern web application that allows users to search for songs on Spotify and automatically download them from YouTube, then seamlessly add them to your Navidrome music server. Perfect for building your personal music library with proper metadata, album art, and organized file structure.
 
 ## Screenshots
@@ -335,6 +337,23 @@ Music Downloader is a full-stack web application designed to streamline the proc
 - 🐳 **Docker Ready**: One-command deployment with Docker Compose
 
 Perfect for music enthusiasts who want to expand their Navidrome library quickly and efficiently!
+
+## Live demo (GitHub Pages)
+
+Demo: https://mounstroya.github.io/music-downloader/
+
+The site has a landing page with install instructions and, under `/app/`, the real frontend
+(`backend/templates` + `backend/static`) running against a simulated API in the browser
+(`demo/mock-api.js`): search, album view, download queue with fake progress, `/playlist` and `/cookies`.
+No keys, no real downloads; covers and audio are generated on the fly.
+
+- **Build locally:** `pip install jinja2 && python3 demo/build.py` → output in `demo/dist/`
+  (serve it with `python3 -m http.server -d demo/dist`). All paths are relative, so it works under any subpath.
+- **Deploy:** `.github/workflows/pages.yml` builds and publishes on every push to `main` (or manually via *Run workflow*).
+- **Enable it once:** repository **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+- **New endpoints:** if the frontend calls a new `api/...` route, add it to the route table in `demo/mock-api.js`
+  (`route('GET', 'thing/:id', ({ params, query, body }) => ({ ... }))`). Unknown routes answer
+  `501 {"detail": "...no está disponible en la demo..."}` instead of breaking the page.
 
 ## Documentation
 

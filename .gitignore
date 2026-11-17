@@ -46,3 +46,7 @@ Thumbs.db
 *.log
 
 .cache
+
+# Demo de GitHub Pages (se genera con demo/build.py)
+demo/dist/
+_site/

@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Music Downloader para Navidrome</title>
+    <meta name="description" content="Busca canciones con metadatos de Spotify o Deezer, descárgalas de YouTube y agrégalas a tu servidor Navidrome. Prueba la demo o instálala con Docker.">
+    <meta name="color-scheme" content="dark">
+    <meta name="theme-color" content="#121212">
+    <meta property="og:title" content="Music Downloader para Navidrome">
+    <meta property="og:description" content="Busca, descarga con metadatos completos y agrega a Navidrome. Demo interactiva sin instalar nada.">
+    <meta property="og:image" content="images/main-interface.png">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%B5%3C/text%3E%3C/svg%3E">
+    <link rel="stylesheet" href="landing.css">
+</head>
+<body>
+<header class="nav">
+    <div class="wrap nav-in">
+        <a class="brand" href="./"><span class="logo" aria-hidden="true">♫</span> Music Downloader</a>
+        <nav>
+            <a href="#que-hace">Qué hace</a>
+            <a href="#instalar">Instalar</a>
+            <a href="https://github.com/Mounstroya/music-downloader" rel="noopener">GitHub</a>
+        </nav>
+    </div>
+</header>
+
+<main>
+    <section class="hero">
+        <div class="wrap hero-in">
+            <div class="hero-text">
+                <p class="eyebrow">Autohospedado · código abierto · MIT</p>
+                <h1>Busca una canción. <span>Llega a Navidrome</span> con portada, letra y etiquetas.</h1>
+                <p class="lead">
+                    Music Downloader busca los metadatos en Spotify o Deezer, encuentra el audio en YouTube con
+                    <a href="https://github.com/yt-dlp/yt-dlp" rel="noopener">yt-dlp</a> y lo guarda ordenado en tu
+                    biblioteca de <a href="https://www.navidrome.org/" rel="noopener">Navidrome</a>. También compara tus
+                    playlists con lo que ya tienes y te deja escuchar cada descarga antes de aprobarla.
+                </p>
+                <div class="cta">
+                    <a class="btn primary" href="app/">Probar la demo →</a>
+                    <a class="btn" href="#instalar">Instalar con Docker</a>
+                </div>
+                <p class="small">La demo corre la interfaz real con datos de ejemplo: no descarga nada ni pide llaves.</p>
+            </div>
+            <figure class="hero-shot">
+                <img src="images/main-interface.png" width="1848" height="1007" alt="Buscador de Music Downloader con resultados y botones de descarga">
+            </figure>
+        </div>
+    </section>
+
+    <section id="que-hace" class="wrap block">
+        <h2>Qué hace</h2>
+        <div class="grid">
+            <article class="feat">
+                <h3><span aria-hidden="true">🔎</span> Busca con buenos metadatos</h3>
+                <p>Canciones y álbumes desde Spotify o Deezer. Sin llaves de Spotify funciona solo con Deezer.</p>
+            </article>
+            <article class="feat">
+                <h3><span aria-hidden="true">🎯</span> Elige bien en YouTube</h3>
+                <p>Califica a los candidatos de YouTube Music y te pregunta cuando no hay una coincidencia clara.</p>
+            </article>
+            <article class="feat">
+                <h3><span aria-hidden="true">🏷️</span> Etiqueta y ordena</h3>
+                <p>Artista, álbum, número de pista, portada y letras sincronizadas (<code>.lrc</code>), en <code>Artista/Álbum/</code>.</p>
+            </article>
+            <article class="feat">
+                <h3><span aria-hidden="true">📋</span> Revisa playlists</h3>
+                <p>Importa una playlist de Spotify o Deezer, ve cuáles ya tienes, descarga las que faltan y apruébalas al escucharlas.</p>
+            </article>
+            <article class="feat">
+                <h3><span aria-hidden="true">📊</span> Cola con progreso</h3>
+                <p>Descarga canciones sueltas o álbumes completos y sigue el avance de cada una.</p>
+            </article>
+            <article class="feat">
+                <h3><span aria-hidden="true">🍪</span> Menos bloqueos de YouTube</h3>
+                <p>Sube las cookies de una cuenta de YouTube desde la página <code>/cookies</code> para evitar el "confirma que no eres un bot".</p>
+            </article>
+        </div>
+
+        <ol class="flow" aria-label="Cómo funciona">
+            <li><b>1</b><span>Buscas</span><small>Spotify / Deezer</small></li>
+            <li><b>2</b><span>Elige el audio</span><small>YouTube Music + yt-dlp</small></li>
+            <li><b>3</b><span>Etiqueta</span><small>mutagen + lrclib</small></li>
+            <li><b>4</b><span>Lo escuchas</span><small>en Navidrome</small></li>
+        </ol>
+    </section>
+
+    <section class="wrap block">
+        <h2>Capturas</h2>
+        <div class="shots">
+            <figure>
+                <img src="images/main-interface.png" width="1848" height="1007" loading="lazy" alt="Resultados de búsqueda de canciones">
+                <figcaption>Buscador de canciones y álbumes.</figcaption>
+            </figure>
+            <figure>
+                <img src="images/download-queue.png" width="1245" height="601" loading="lazy" alt="Cola de descargas con barras de progreso">
+                <figcaption>Cola de descargas con progreso.</figcaption>
+            </figure>
+        </div>
+        <p class="center"><a class="btn primary" href="app/">Abrir la demo interactiva →</a>
+            <a class="btn" href="app/playlist/">Demo de playlists</a></p>
+    </section>
+
+    <section id="instalar" class="wrap block">
+        <h2>Instalar</h2>
+        <p>Necesitas <a href="https://docs.docker.com/get-docker/" rel="noopener">Docker</a>. La imagen se publica en
+            <code>ghcr.io/mounstroya/music-downloader:latest</code> y trae todo (Python, ffmpeg, yt-dlp).
+            Cambia <code>/ruta/a/tu/musica</code> por la carpeta de música de Navidrome.</p>
+
+        <h3>Opción A · <code>docker run</code></h3>
+        <div class="code">
+            <button class="copy" type="button" data-copy="run">Copiar</button>
+<pre id="run"><code>mkdir -p md-data
+docker run -d --name music-downloader \
+  --restart unless-stopped \
+  -p 8000:8000 \
+  --user "$(id -u):$(id -g)" \
+  -v /ruta/a/tu/musica:/music \
+  -v "$PWD/md-data":/app/downloads \
+  -e NAVIDROME_MUSIC_PATH=/music \
+  -e DOWNLOAD_DIR=/app/downloads \
+  -e HOME=/app/downloads \
+  -e XDG_CACHE_HOME=/app/downloads/.cache \
+  -e METADATA_SOURCE=deezer \
+  ghcr.io/mounstroya/music-downloader:latest</code></pre>
+        </div>
+
+        <h3>Opción B · <code>docker-compose.yml</code></h3>
+        <div class="code">
+            <button class="copy" type="button" data-copy="compose">Copiar</button>
+<pre id="compose"><code>services:
+  music-downloader:
+    image: ghcr.io/mounstroya/music-downloader:latest
+    container_name: music-downloader
+    restart: unless-stopped
+    user: "1000:1000"            # tu usuario: id -u / id -g
+    ports:
+      - "8000:8000"
+    volumes:
+      - /ruta/a/tu/musica:/music     # carpeta de música de Navidrome
+      - ./md-data:/app/downloads     # base de datos, temporales y cookies
+    environment:
+      NAVIDROME_MUSIC_PATH: /music
+      DOWNLOAD_DIR: /app/downloads
+      HOME: /app/downloads
+      XDG_CACHE_HOME: /app/downloads/.cache
+      METADATA_SOURCE: auto          # auto | spotify | deezer
+      # Opcional: Spotify (si no pones llaves, se usa Deezer)
+      # SPOTIFY_CLIENT_ID: ...
+      # SPOTIFY_CLIENT_SECRET: ...
+      # SPOTIFY_REDIRECT_URI: http://127.0.0.1:8000/callback
+      # Opcional: pedir a Navidrome que reescanee al terminar
+      # NAVIDROME_API_URL: http://navidrome:4533
+      # NAVIDROME_USERNAME: admin
+      # NAVIDROME_PASSWORD: ...
+      # Opcional: formato y calidad por defecto
+      # OUTPUT_FORMAT: mp3
+      # AUDIO_QUALITY: "192"</code></pre>
+        </div>
+        <p>Crea antes la carpeta (<code>mkdir -p md-data</code>) para que sea de tu usuario; luego <code>docker compose up -d</code> y abre <a href="http://localhost:8000" rel="noopener">http://localhost:8000</a>.</p>
+
+        <h3>Variables</h3>
+        <div class="table">
+            <table>
+                <thead><tr><th>Variable</th><th>Para qué</th></tr></thead>
+                <tbody>
+                <tr><td><code>NAVIDROME_MUSIC_PATH</code></td><td>Carpeta de música <b>dentro</b> del contenedor (<code>/music</code>). Monta ahí la de Navidrome.</td></tr>
+                <tr><td><code>DOWNLOAD_DIR</code></td><td>Temporales, base de datos de playlists y cookies de YouTube. Móntala para no perderlas.</td></tr>
+                <tr><td><code>METADATA_SOURCE</code></td><td><code>auto</code> (Spotify si hay llaves, si no Deezer), <code>spotify</code> o <code>deezer</code>. Deezer no necesita llaves.</td></tr>
+                <tr><td><code>SPOTIFY_CLIENT_ID</code>, <code>SPOTIFY_CLIENT_SECRET</code></td><td>Opcionales. Créalas en <a href="https://developer.spotify.com/dashboard" rel="noopener">developer.spotify.com</a>.</td></tr>
+                <tr><td><code>NAVIDROME_API_URL</code>, <code>NAVIDROME_USERNAME</code>, <code>NAVIDROME_PASSWORD</code></td><td>Opcionales, para lanzar el escaneo de la biblioteca al terminar cada descarga.</td></tr>
+                <tr><td><code>OUTPUT_FORMAT</code>, <code>AUDIO_QUALITY</code></td><td>Opcionales. Formato (<code>mp3</code>, <code>m4a</code>, <code>opus</code>, <code>ogg</code>, <code>flac</code>) y kbps por defecto.</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p class="small">Si YouTube empieza a pedir "Sign in to confirm you're not a bot", entra a <code>/cookies</code> en tu instalación
+            y sube la sesión de una cuenta secundaria. Más detalles en el
+            <a href="https://github.com/Mounstroya/music-downloader#readme" rel="noopener">README</a>.</p>
+    </section>
+
+    <section class="wrap block legal">
+        <h2>Aviso legal</h2>
+        <p>Music Downloader es para <b>uso personal</b>. Descarga solo contenido que tengas derecho a guardar y respeta
+            los derechos de autor y los términos de servicio de YouTube, Spotify y Deezer en tu país. El proyecto no
+            aloja ni distribuye música; los autores no se hacen responsables del uso que se le dé.</p>
+    </section>
+
+    <section class="wrap block en" lang="en">
+        <h2>In English</h2>
+        <p>Music Downloader is a self-hosted web app: search songs or albums with Spotify or Deezer metadata, download the
+            audio from YouTube with yt-dlp, tag it (cover art, synced lyrics) and drop it into your Navidrome library.
+            It can also compare a Spotify/Deezer playlist against your library and let you review each download.
+            <a href="app/">Try the demo</a> (sample data, nothing is downloaded) or run
+            <code>ghcr.io/mounstroya/music-downloader:latest</code> with Docker as shown above. For personal use only;
+            respect copyright.</p>
+    </section>
+</main>
+
+<footer class="foot">
+    <div class="wrap">
+        <p>Licencia MIT · Basado en <a href="https://github.com/soggy8/music-downloader" rel="noopener">soggy8/music-downloader</a>
+            · Mantenido por <a href="https://github.com/Mounstroya" rel="noopener">Mounstroya</a></p>
+    </div>
+</footer>
+
+<script>
+    document.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', async () => {
+        const text = document.getElementById(b.dataset.copy).innerText;
+        try { await navigator.clipboard.writeText(text); b.textContent = 'Copiado ✔'; }
+        catch (_) { b.textContent = 'Selecciona y copia'; }
+        setTimeout(() => { b.textContent = 'Copiar'; }, 2000);
+    }));
+</script>
+</body>
+</html>

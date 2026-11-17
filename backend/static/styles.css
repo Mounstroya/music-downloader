@@ -842,6 +842,28 @@ header h1 {
         font-size: 2rem;
     }
 
+    /* selectores (Fuente, Download to, Format, Quality) a lo ancho, sin salirse de la pantalla */
+    .download-options {
+        flex-direction: column;
+        align-items: stretch;
+        width: 100%;
+    }
+
+    .download-option {
+        display: grid;
+        grid-template-columns: 110px minmax(0, 1fr);
+        gap: 8px;
+    }
+
+    .download-option label {
+        margin-right: 0;
+    }
+
+    .download-select {
+        width: 100%;
+        min-width: 0;
+    }
+
     .container {
         padding: 10px;
     }

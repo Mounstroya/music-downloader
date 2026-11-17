@@ -544,6 +544,44 @@
         rematch(params.pid);
         return { ok: true, files: 1287 + state.library.length };
     });
+    // ---- sincronización (en la demo la automática está apagada, igual que por defecto en la app real)
+    const syncCfg = (pid) => {
+        const pl = state.playlists[pid];
+        if (!pl) throw fail(404, 'Playlist no importada');
+        pl.sync = pl.sync || { auto_sync: false, interval_hours: 24, auto_download: false, last_sync_at: null, last_sync_ok: null,
+            last_sync_result: null, last_sync_error: null, fail_count: 0, next_sync_at: null };
+        return pl;
+    };
+    const syncPublic = (pid) => {
+        const pl = syncCfg(pid);
+        return { playlist_id: pid, ...pl.sync, syncable: true, source: pl.meta.source, partial: false,
+            new_count: pl.tracks.filter((t) => t.is_new).length, running: false,
+            global: { enabled: false, min_hours: 6, default_hours: 24, max_downloads: 20, test_minutes: null } };
+    };
+    route('GET', 'playlists/:pid/sync', ({ params }) => syncPublic(params.pid));
+    route('PUT', 'playlists/:pid/sync', ({ params, body }) => {
+        const pl = syncCfg(params.pid); const b = body || {};
+        Object.assign(pl.sync, { auto_sync: !!b.auto_sync, auto_download: !!b.auto_download,
+            interval_hours: Math.max(6, parseInt(b.interval_hours, 10) || 24) });
+        return syncPublic(params.pid);
+    });
+    route('POST', 'playlists/:pid/sync', ({ params }) => {
+        const pl = syncCfg(params.pid);
+        Object.assign(pl.sync, { last_sync_at: sec(), last_sync_ok: 1, last_sync_error: null,
+            last_sync_result: JSON.stringify({ added: 0, removed: 0 }) });
+        return { trigger: 'manual', added: 0, removed: 0, loaded: pl.meta.loaded, total: pl.meta.total,
+            source: pl.meta.source, partial: false, user_error: null, downloads: 0 };
+    });
+    route('POST', 'playlists/:pid/new/seen', ({ params }) => { syncCfg(params.pid).tracks.forEach((t) => { t.is_new = 0; }); return { ok: true }; });
+    // ---- mejora de versiones
+    route('POST', 'playlists/:pid/tracks/:tid/upgrade-ignore', ({ params, body }) => {
+        const t = getRow(params.pid, params.tid); t.upgrade_ignored = (body || {}).ignore === false ? 0 : 1; return { ok: true };
+    });
+    route('POST', 'playlists/:pid/tracks/:tid/keep-both', ({ params }) => { const t = getRow(params.pid, params.tid); t.old_path = null; return { ok: true }; });
+    route('POST', 'playlists/:pid/tracks/:tid/delete-old', ({ params }) => { const t = getRow(params.pid, params.tid); t.old_path = null; return { ok: true }; });
+    // ---- avance de importación (la demo importa al instante)
+    route('GET', 'import/progress/:token', () => ({ stage: 'done', done: 0, total: 0 }));
+
     route('POST', 'playlists/:pid/tracks/:tid/mark', ({ params, body }) => {
         const st = (body || {}).status;
         if (!['have', 'missing', 'skip', 'approved'].includes(st)) throw fail(400, 'Estado no válido');

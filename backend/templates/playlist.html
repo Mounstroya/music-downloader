@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Revisar playlist</title>
     <base href="{{ request.scope.get('root_path', '') }}/">
-    <link rel="stylesheet" href="static/playlist.css?v=1">
+    <link rel="stylesheet" href="static/playlist.css?v=2">
 </head>
 <body>
 <div class="wrap">
@@ -33,11 +33,14 @@
                     <div id="plMeta" class="muted"></div>
                 </div>
                 <div class="pl-actions">
-                    <button class="btn" id="reloadBtn" title="Volver a leer la playlist de Spotify">↻ Actualizar playlist</button>
+                    <button class="btn" id="reloadBtn" title="Volver a leer la playlist y marcar las canciones nuevas">↻ Sincronizar ahora</button>
+                    <button class="btn" id="syncCfgBtn" title="Sincronización automática de esta playlist">⚙ Automática</button>
                     <button class="btn" id="rescanBtn" title="Volver a revisar la carpeta de música">Reescanear biblioteca</button>
                     <button class="btn primary" id="bulkBtn">Descargar todas las que faltan</button>
                 </div>
             </div>
+            <div id="syncBar" class="syncbar"></div>
+            <div id="syncCfg" class="syncfg hidden"></div>
             <div id="bulkBar" class="bulk hidden"></div>
             <div class="progress"><div id="progFill"></div></div>
             <div class="filters" id="filters"></div>
@@ -47,6 +50,6 @@
     </section>
 </div>
 <div id="toast" class="toast hidden"></div>
-<script src="static/playlist.js?v=1"></script>
+<script src="static/playlist.js?v=2"></script>
 </body>
 </html>
